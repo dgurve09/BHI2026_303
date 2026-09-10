@@ -1,0 +1,9 @@
+# raw recordings, never committed
+data/
+
+# everything the analysis writes
+results/
+round_1_review/results/
+
+__pycache__/
+*.pyc
