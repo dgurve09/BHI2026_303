@@ -1,7 +1,7 @@
-# Round-1 review analyses
+# Controls and secondary analyses
 
-Extra analyses run in response to the reviews. Not needed to reproduce the paper
-itself; they are here so the numbers quoted in the response letter can be checked.
+Additional controls and secondary analyses. Not needed to reproduce the main
+tables, but kept here so every number reported alongside the paper can be checked.
 
 Each script imports `features.py` and `evaluate.py` from the parent package and
 reads the tables written by `run_all.py extract`, so the settings match the main
@@ -10,8 +10,8 @@ analysis.
 ```bash
 cd ..            # the package root
 python run_all.py extract        # if you have not already
-cd round_1_review
-python r14_decomposition.py      # any script, results land in round_1_review/results/
+cd extra_analyses
+python r14_decomposition.py      # any script, results land in extra_analyses/results/
 ```
 
 | Script | Raised by | Question |

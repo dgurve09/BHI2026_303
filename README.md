@@ -1,70 +1,54 @@
 # Within-Epoch Spectral Trajectory Features for the N1/REM Boundary
 
 Code for *Within-Epoch Spectral Trajectory Features for the N1/REM Boundary in
-Single-Channel EEG*.
-
-Goes from the two public databases to every table in the paper.
+Single-Channel EEG* (IEEE-EMBS BHI 2026). Goes from the two public databases to
+every table in the paper.
 
 ```
-features.py    the three feature sets: BP (5), HC (16), DYN (73)
-datasets.py    read Sleep-EDF Expanded and UCDDB, produce one feature table per dataset
-evaluate.py    cross-validation, metrics and the subject-level bootstrap
-run_all.py     runs the analysis and writes every table to results/
-figures.py     Fig. 2 and Fig. 3
-results/       output, created on first run
-round_1_review/ the extra analyses run for the first round of review
+features.py      the three feature sets: BP (5), HC (16), DYN (73)
+datasets.py      read Sleep-EDF Expanded and UCDDB, one feature table per dataset
+evaluate.py      cross-validation, metrics and the subject-level bootstrap
+run_all.py       runs the analysis and writes every table to results/
+figures.py       Fig. 2 and Fig. 3
+extra_analyses/  controls and secondary analyses
+results/         output, created on first run
 ```
 
 ---
 
-## 1. Get the data
+## 1. Data
 
 Neither database is redistributed here; both are public.
 
-### Sleep-EDF Expanded (PhysioNet, DOI 10.13026/C2X676)
-
-About 8 GB. The two subsets are used separately.
-
-```bash
-wget -r -N -c -np -nH --cut-dirs=3 \
-  https://physionet.org/files/sleep-edfx/1.0.0/sleep-cassette/
-wget -r -N -c -np -nH --cut-dirs=3 \
-  https://physionet.org/files/sleep-edfx/1.0.0/sleep-telemetry/
-```
-
-This gives `sleep-cassette/` and `sleep-telemetry/`, each with `*-PSG.edf` and
-matching `*-Hypnogram.edf` files.
-
-### UCDDB, the St Vincent's University Hospital / UCD database (PhysioNet, DOI 10.13026/C26C7D)
-
-About 800 MB.
+**Sleep-EDF Expanded** (DOI 10.13026/C2X676), about 8 GB. The two subsets are
+used separately.
 
 ```bash
-wget -r -N -c -np -nH --cut-dirs=3 \
-  https://physionet.org/files/ucddb/1.0.0/
+wget -r -N -c -np -nH --cut-dirs=3 https://physionet.org/files/sleep-edfx/1.0.0/sleep-cassette/
+wget -r -N -c -np -nH --cut-dirs=3 https://physionet.org/files/sleep-edfx/1.0.0/sleep-telemetry/
 ```
 
-You need the `ucddb*.rec` recordings and matching `ucddb*_stage.txt` files. The
-`.rec` files are EDF with a different suffix; the loader handles this.
+**UCDDB**, St Vincent's University Hospital / UCD (DOI 10.13026/C26C7D), about
+800 MB. You need the `ucddb*.rec` recordings and matching `ucddb*_stage.txt`
+files; the `.rec` files are EDF with a different suffix and the loader handles
+that.
 
-### Where to put it
+```bash
+wget -r -N -c -np -nH --cut-dirs=3 https://physionet.org/files/ucddb/1.0.0/
+```
+
+Expected layout:
 
 ```
 data/
-  sleep_edf/
-    sleep-cassette/
-    sleep-telemetry/
-  ucddb/
-    ucddb002.rec
-    ucddb002_stage.txt
-    ...
+  sleep_edf/sleep-cassette/        *-PSG.edf and *-Hypnogram.edf
+  sleep_edf/sleep-telemetry/
+  ucddb/                           ucddb002.rec, ucddb002_stage.txt, ...
 ```
 
 To keep the recordings outside the repository, put them anywhere and set
-
-```bash
-export N1REM_DATA=/path/to/that/folder     # must contain sleep_edf/ and ucddb/
-```
+`export N1REM_DATA=/path/to/that/folder` (it must contain `sleep_edf/` and
+`ucddb/`).
 
 ---
 
@@ -93,43 +77,38 @@ python figures.py             # Fig. 2 and Fig. 3
 
 `python run_all.py all` does the five analysis steps in order.
 
-Extraction is the slow step: 94 features per epoch over every recording, a few
-hours for the full cassette set on one core. It caches per recording in
-`results/features/`, so it can be interrupted and resumed, and the reporting
-steps take about a minute each afterwards.
+Extraction is the slow step, a few hours for the full cassette set on one core.
+It caches per recording in `results/features/`, so it can be interrupted and
+resumed, and each reporting step then takes about a minute.
 
 ---
 
-## 4. What the analysis does
+## 4. Method, in short
 
-**Epochs.** Every 30-s epoch is linearly detrended, median-centred and filtered
-with a fourth-order zero-phase Butterworth bandpass from 0.3 to 45 Hz. Bands are
-delta 0.5-4, theta 4-8, alpha 8-12, sigma 12-16 and beta 16-30 Hz.
+Every 30-s epoch is linearly detrended, median-centred and filtered with a
+fourth-order zero-phase Butterworth bandpass from 0.3 to 45 Hz. Bands are delta
+0.5-4, theta 4-8, alpha 8-12, sigma 12-16 and beta 16-30 Hz.
 
-**Sub-windows.** For the proposed features a 2-s window slides across the epoch
-with a 1-s stride, giving K = 29 windows. Each window gives a Hann-windowed
-Welch PSD, a five-dimensional relative band power vector normalised over
-0.5-30 Hz, and three window-level descriptors. The 2-s window and 1-s stride
-were chosen before any comparison was run, because 2 s is long enough to
-estimate the 4-30 Hz bands and short enough to keep within-epoch change.
+For the proposed features a 2-s window slides across the epoch with a 1-s
+stride, giving K = 29 windows, each yielding a Hann-windowed Welch PSD, a
+five-dimensional relative band power vector normalised over 0.5-30 Hz, and three
+window-level descriptors. The 2-s window and 1-s stride were fixed before any
+comparison was run.
 
-**Classifier.** One logistic regression throughout: median imputation,
-standardisation, L2 at C = 1, lbfgs, class-balanced loss. Imputation and scaling
-sit inside the pipeline so they are fit on training folds only. Nothing is
-tuned; the classifier is there to compare feature sets.
+One logistic regression is used throughout (median imputation, standardisation,
+L2 at C = 1, lbfgs, class-balanced loss), with imputation and scaling inside the
+pipeline so they see training folds only. Nothing is tuned; the classifier is
+there to compare feature sets. Folds are five-fold `StratifiedGroupKFold`
+grouped by subject for Sleep-EDF, so both nights of a subject stay together, and
+by record for UCDDB.
 
-**Folds.** Five-fold `StratifiedGroupKFold` grouped by subject for Sleep-EDF, so
-both nights of a subject stay in the same fold, and by record for UCDDB, where
-there is one record per subject.
-
-**Uncertainty.** AUC is computed once from pooled out-of-fold predictions, not
-averaged over folds and not per subject. The bootstrap resamples whole subjects
-(records for UCDDB) over those fixed predictions, 2000 resamples, no refitting,
-so the interval reflects subject sampling rather than training-set sampling.
-Two-sided p from the sign of the resampled differences.
-
-**Seed.** `evaluate.SEED` sets the fold assignment and the bootstrap. Changing
-it moves the AUCs by up to about 0.005.
+AUC is computed once from pooled out-of-fold predictions, not averaged over
+folds and not per subject. The bootstrap resamples whole subjects (records for
+UCDDB) over those fixed predictions, 2000 resamples, no refitting, so the
+interval covers subject sampling rather than training-set sampling. The p-value
+is two-sided, from the sign of the resampled differences. `evaluate.SEED` sets
+the fold assignment and the bootstrap; changing it moves the AUCs by up to about
+0.005.
 
 ---
 
@@ -167,12 +146,12 @@ prefix `common_`.
 
 ### DYN, 73 features
 
-All of these are computed from the K = 29 sub-windows. Column prefix `dyn_`,
-plus one `smti_`.
+Computed from the K = 29 sub-windows. Column prefix `dyn_`, plus one `smti_`.
 
 **The eight summaries.** For a scalar trajectory z(k) over the K windows, write
 Dz(k) = z(k) - z(k-1) for the step, I[.] for the indicator, and let
-H(k) = I[z(k) >= the 75th percentile of z within this same epoch].
+H(k) = I[z(k) >= the 75th percentile of z within this same epoch]. That
+threshold is per-epoch, not global and not fixed.
 
 | Suffix | Definition |
 | --- | --- |
@@ -185,12 +164,9 @@ H(k) = I[z(k) >= the 75th percentile of z within this same epoch].
 | `_dominance_fraction` | fraction of windows with z(k) > 0 |
 | `_mean_run_length` | mean length in windows of the maximal runs on which I[z(k) > 0] stays constant, counting runs of both states, unnormalised so it lies in 1 to 29 |
 
-The high-state threshold is the 75th percentile of that trajectory **within the
-same epoch**. It is not global and not fixed.
-
 **Band-ratio trajectories, 4 x 8 = 32.** With p_b(k) the relative power of band
 b in window k, and eps = 1e-12 added to numerator and denominator before every
-logarithm,
+logarithm:
 
 - `theta_alpha` = log((p_theta + eps) / (p_alpha + eps))
 - `alpha_sigma` = log((p_alpha + eps) / (p_sigma + eps))
@@ -201,7 +177,7 @@ Each gets all eight summaries, giving names such as
 `dyn_theta_alpha_dominance_fraction`. An exact zero counts as non-dominant.
 
 **Spectral-path shape, 5.** With p(k) the five-dimensional relative band power
-vector of window k, u(k) = p(k+1) - p(k) and v(k) = p(k) - p(k-1),
+vector of window k, u(k) = p(k+1) - p(k) and v(k) = p(k) - p(k-1):
 
 | Column | Definition |
 | --- | --- |
@@ -218,31 +194,20 @@ across windows gets `_power_std`, `_power_diff_std`, `_power_abs_step` and
 **Window-level descriptors, 3 x 5 = 15.** Each window also gives a spectral
 slope over 1-30 Hz, a spectral entropy over 0.5-30 Hz and a spectral centroid
 over 0.5-30 Hz. Each of these three trajectories gets `_mean`, `_std`,
-`_diff_std`, `_abs_step` and `_high_state_switching`, giving names such as
-`dyn_slope_diff_std`.
+`_diff_std`, `_abs_step` and `_high_state_switching`.
 
-**Composite instability, 1.**
+**Composite instability, 1.** `smti_spectral_microtrajectory_instability` is
+`dyn_band_trajectory_turning` times `dyn_band_trajectory_step_mean`.
 
-| Column | Definition |
-| --- | --- |
-| `smti_spectral_microtrajectory_instability` | `dyn_band_trajectory_turning` times `dyn_band_trajectory_step_mean` |
-
-**Note on collinearity.** `dyn_band_trajectory_length` is `dyn_band_trajectory_step_mean`
-multiplied by the number of steps, so the two are proportional and carry the same
-information. Both are kept because both are named in the paper, but only 72 of
-the 73 are linearly independent.
-
-**Note on the count.** The submitted paper reported 77 features. Four of the
+**Three notes.** `dyn_band_trajectory_length` is `dyn_band_trajectory_step_mean`
+multiplied by the number of steps, so the two are proportional and only 72 of
+the 73 are linearly independent; both are kept because both are named in the
+paper. The submitted version of the paper reported 77 features, but four of the
 five composite descriptors were exact copies of descriptors already in the set,
-so the set has **73 unique features**. Dropping the four duplicates changes AUC
-by 0.0001. This code defines the 73.
-
-**Numerical guard.** eps = 1e-12 is added to the numerator and denominator
-before every logarithm and to the turning denominator, so a band power of zero
-in some window cannot produce a division by zero or a log of zero. It is not
-tuned, and any value well below the scale of the data gives the same result. On
-these data it never comes into play, since the smallest mean trajectory step
-across the 47,357 cassette epochs is 5.65e-3.
+so the set has 73 unique features and this code defines those 73. The guard
+eps = 1e-12 keeps a zero band power from producing a division by zero or a log
+of zero; it is not tuned, and on these data it never comes into play, since the
+smallest mean trajectory step across the 47,357 cassette epochs is 5.65e-3.
 
 ---
 
@@ -251,77 +216,62 @@ across the 47,357 cassette epochs is 5.65e-3.
 | Paper item | Command | Output |
 | --- | --- | --- |
 | Table I, dataset summary | `run_all.py binary` | `results/table1_datasets.csv` |
-| Table II, feature inventory | section 5 above | |
-| Table III, summaries applied to each window series | section 5 above | |
+| Tables II and III, feature inventory and summaries | section 5 above | |
 | Table IV, bootstrap AUC gains | `run_all.py binary` | `results/table3_bootstrap_gains.csv` |
 | Table V, main N1/REM evaluation | `run_all.py binary` | `results/table4_main_results.csv` |
-| AUC intervals quoted in the Results | `run_all.py binary` | `results/table4_main_results.csv` |
 | Table VI, size-matched controls | `run_all.py controls` | `results/table5_controls.csv` |
-| UCDDB section | `run_all.py ucddb` | `results/ucddb_models.csv`, `results/ucddb_gains.csv` |
 | Table VII, five-class evaluation | `run_all.py fiveclass` | `results/table6_five_class.csv` |
+| UCDDB section | `run_all.py ucddb` | `results/ucddb_models.csv`, `results/ucddb_gains.csv` |
 | Fig. 1, pipeline schematic | drawn separately for the paper; `figures.py` writes an equivalent version | `results/fig_pipeline.pdf` |
 | Fig. 2, example epochs | `figures.py` | `results/fig_real_epoch_feature_examples.pdf` |
 | Fig. 3, single-feature separability | `figures.py` | `results/fig2_feature_separability.png` |
 
-The five-class run uses a 160-point cap for sample entropy rather than 384, so
-that the full label set stays tractable. Everything else matches the binary run.
-
-Direction-adjusted AUCs in Fig. 2 are descriptive. They are optimistic by
-construction and are not out-of-sample estimates.
+The five-class run caps sample entropy at 160 points rather than 384 so the full
+label set stays tractable; everything else matches the binary run. The
+direction-adjusted AUCs in Fig. 3 are descriptive only. The direction is chosen
+on the same data, so they are optimistic and are not out-of-sample estimates.
 
 ---
 
 ## 7. Citation
 
-Please cite the paper. Sleep-EDF Expanded and UCDDB carry their own citation
-requirements, given on their PhysioNet pages.
+M. K. Gurve, N. V. Kulangareth, D. Chanderwal, S. Rastogi and D. Gurve,
+"Within-Epoch Spectral Trajectory Features for the N1/REM Boundary in
+Single-Channel EEG," in *Proc. IEEE-EMBS Int. Conf. on Biomedical and Health
+Informatics (BHI)*, Hong Kong, Dec. 2026.
+
+Sleep-EDF Expanded and UCDDB carry their own citation requirements, given on
+their PhysioNet pages.
 
 ---
 
 ## 8. Reproduction
 
-Checked against the original analysis three ways.
-
-**Features.** Extracting from the raw EDFs, all 94 columns (5 BP, 16 HC, 73 DYN)
+**Features.** Extracted from the raw EDFs, all 94 columns (5 BP, 16 HC, 73 DYN)
 match the original per-epoch tables to better than 1e-9 on Sleep-EDF, with
-identical epoch selection: 47,357 cassette epochs / 153 recordings / 78 subjects,
-12,002 telemetry / 44 / 22, 6,419 UCDDB / 25 records. Five-class wake trimming
-gives the same epochs and labels.
+identical epoch selection: 47,357 cassette epochs / 153 recordings / 78
+subjects, 12,002 telemetry / 44 / 22, 6,419 UCDDB / 25 records. Five-class wake
+trimming gives the same epochs and labels.
 
-**Evaluation.** At the fold seed used for the submission this code reproduces the
-published tables exactly.
+**End to end.** From the raw EDFs at `evaluate.SEED = 0`, which is what the
+paper reports:
 
-| | BP | Alpha/theta | HC | DYN | HC+DYN |
-| --- | --- | --- | --- | --- | --- |
-| Cassette, published | 0.697 | 0.677 | 0.727 | 0.760 | 0.763 |
-| Cassette, this code | 0.697 | 0.677 | 0.727 | 0.760 | 0.763 |
-| Telemetry, published | 0.763 | 0.783 | 0.794 | 0.823 | 0.834 |
-| Telemetry, this code | 0.763 | 0.783 | 0.794 | 0.823 | 0.834 |
+| | BP | Alpha/theta | HC | DYN | HC+DYN | HC+DYN vs HC |
+| --- | --- | --- | --- | --- | --- | --- |
+| Cassette | 0.692 | 0.678 | 0.722 | 0.761 | 0.763 | +0.041 [+0.026, +0.057], p < 0.001 |
+| Telemetry | 0.758 | 0.779 | 0.793 | 0.819 | 0.831 | +0.037 [+0.016, +0.056], p = 0.001 |
+| UCDDB | 0.546 | 0.611 | 0.789 | 0.750 | 0.800 | +0.011 [-0.005, +0.027], p = 0.165 |
 
-Balanced accuracy, macro F1, the bootstrap gains, the controls and the five-class
-table all reproduce to the last published digit, and the worked-example figure
-gives the same descriptor values (N1: L = 8.51, T = 1.49, 10 switches; REM:
-L = 2.80, T = 1.03, 4 switches).
+Balanced accuracy, macro F1, the controls and the five-class table reproduce the
+published values, and the worked-example figure gives the same descriptor values
+(N1: L = 8.51, T = 1.49, 10 switches; REM: L = 2.80, T = 1.03, 4 switches). The
+size-matched controls stay at the baseline, between -0.001 and -0.004.
 
-**End to end.** From the raw EDFs at `evaluate.SEED = 0`:
-
-| | HC | DYN | HC+DYN | HC+DYN vs HC |
-| --- | --- | --- | --- | --- |
-| Cassette | 0.722 | 0.761 | 0.763 | +0.041 [+0.026, +0.057], p < 0.001 |
-| Telemetry | 0.793 | 0.819 | 0.831 | +0.037 [+0.016, +0.056], p = 0.001 |
-| UCDDB | 0.789 | 0.750 | 0.800 | +0.011 [-0.005, +0.027], p = 0.165 |
-
-The size-matched controls stay at the baseline, at -0.001 to -0.004, while
-HC+DYN gains +0.041 and +0.037.
-
-### Two corrections
-
-UCDDB dynamic features were previously computed on the unfiltered epoch: the
-earlier script skipped the detrend, median-centring and 0.3-45 Hz bandpass given
-in the Methods. This code applies the filter everywhere. Sleep-EDF and the
-five-class run were checked and were never affected.
-
-The UCDDB comparison is not stable across fold assignments. With corrected
-features it runs from -0.010 to +0.011 depending on the seed and no interval
-excludes zero, so the proposed features neither help nor harm the handcrafted
-baseline there.
+**Two corrections made during revision.** UCDDB dynamic features had been
+computed on the unfiltered epoch, because the earlier script skipped the
+detrend, median-centring and 0.3-45 Hz bandpass given in the Methods. This code
+applies the filter everywhere. Sleep-EDF and the five-class run were checked and
+were never affected. Separately, the UCDDB comparison is not stable across fold
+assignments: with corrected features it runs from -0.013 to +0.011 depending on
+the seed and no interval excludes zero, so the proposed features neither help
+nor harm the handcrafted baseline there.

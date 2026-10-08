@@ -3,7 +3,7 @@ data/
 
 # everything the analysis writes
 results/
-round_1_review/results/
+extra_analyses/results/
 
 __pycache__/
 *.pyc
